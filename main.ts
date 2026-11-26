@@ -2,7 +2,7 @@
 // Writes a single original line (1-240 chars, pure printable ASCII) to
 // /output/entry.txt and validates it at runtime before exiting.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const LINE =
@@ -33,9 +33,27 @@ function main(): void {
     }
   }
 
+  // Byte-length gate: the 1-240 limit is on bytes as well as characters, and
+  // a multi-byte character could pass the char count while exceeding the
+  // byte budget. Fail loudly before writing anything.
+  const byteLength = Buffer.byteLength(LINE, "utf8");
+  if (byteLength < 1 || byteLength > 240) {
+    fail(`entry is ${byteLength} bytes, must be 1-240 bytes`);
+  }
+
   mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
   writeFileSync(OUTPUT_PATH, LINE, "utf8");
-  console.log(`wrote ${chars.length} characters to ${OUTPUT_PATH}`);
+
+  // Verify the file on disk round-trips byte-identically: its byte length
+  // must match the validated in-memory byte length, or something altered
+  // the content on the way out.
+  const written = readFileSync(OUTPUT_PATH, "utf8");
+  const writtenByteLength = Buffer.byteLength(written, "utf8");
+  if (writtenByteLength !== byteLength || written !== LINE) {
+    fail(`written file byte length ${writtenByteLength} mismatches expected ${byteLength}`);
+  }
+
+  console.log(`wrote ${chars.length} characters (${byteLength} bytes) to ${OUTPUT_PATH}`);
 }
 
 main();
